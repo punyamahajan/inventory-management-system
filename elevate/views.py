@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import generics, status, filters
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -19,6 +21,9 @@ from .serializers import (
 )
 
 
+logger = logging.getLogger('elevate')
+
+
 @extend_schema(tags=['Health'])
 class HealthCheckView(APIView):
     """Report application health and database connectivity."""
@@ -31,11 +36,13 @@ class HealthCheckView(APIView):
             with connection.cursor() as cursor:
                 cursor.execute('SELECT 1')
         except DatabaseError:
+            logger.error('Health check failed: database unavailable')
             return Response(
                 {'status': 'unhealthy', 'database': 'unavailable'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
+        logger.info('Health check succeeded: database connected')
         return Response({'status': 'healthy', 'database': 'connected'})
 
 
@@ -216,6 +223,13 @@ class ProductStockInView(APIView):
             product.stock_quantity += quantity
             product.save()
 
+            logger.info(
+                'Stock-in completed: product_id=%s sku=%s quantity=%s',
+                product.pk,
+                product.sku,
+                quantity,
+            )
+
             return Response(
                 StockMovementSerializer(movement).data,
                 status=status.HTTP_200_OK
@@ -259,6 +273,14 @@ class ProductStockOutView(APIView):
             notes = serializer.validated_data.get('notes', '')
 
             if product.stock_quantity < quantity:
+                logger.warning(
+                    'Stock-out rejected: insufficient stock product_id=%s sku=%s '
+                    'requested_quantity=%s available_quantity=%s',
+                    product.pk,
+                    product.sku,
+                    quantity,
+                    product.stock_quantity,
+                )
                 return Response(
                     {'error': f'Insufficient stock. Available: {product.stock_quantity}'},
                     status=status.HTTP_400_BAD_REQUEST
@@ -273,6 +295,13 @@ class ProductStockOutView(APIView):
 
             product.stock_quantity -= quantity
             product.save()
+
+            logger.info(
+                'Stock-out completed: product_id=%s sku=%s quantity=%s',
+                product.pk,
+                product.sku,
+                quantity,
+            )
 
             return Response(
                 StockMovementSerializer(movement).data,

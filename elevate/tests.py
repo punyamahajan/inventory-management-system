@@ -12,23 +12,27 @@ from .models import Category, Product, StockMovement
 
 class HealthCheckAPITests(APITestCase):
     def test_healthy_response_when_database_is_connected(self):
-        response = self.client.get(reverse("health-check"))
+        with self.assertLogs("elevate", level="INFO") as captured:
+            response = self.client.get(reverse("health-check"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             response.data,
             {"status": "healthy", "database": "connected"},
         )
+        self.assertIn("Health check succeeded", captured.output[0])
 
     @patch("elevate.views.connection.cursor", side_effect=OperationalError)
     def test_unhealthy_response_when_database_is_unavailable(self, _cursor):
-        response = self.client.get(reverse("health-check"))
+        with self.assertLogs("elevate", level="ERROR") as captured:
+            response = self.client.get(reverse("health-check"))
 
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(
             response.data,
             {"status": "unhealthy", "database": "unavailable"},
         )
+        self.assertIn("Health check failed", captured.output[0])
 
     def test_endpoint_does_not_require_authentication(self):
         unauthenticated_client = APIClient()
@@ -243,11 +247,12 @@ class StockMovementAPITests(AuthenticatedAPITestCase):
         self.product = self.create_product(stock_quantity=10)
 
     def test_stock_in_increases_product_stock_and_creates_movement(self):
-        response = self.client.post(
-            reverse("product-stock-in", kwargs={"pk": self.product.pk}),
-            {"quantity": 7, "notes": "Supplier delivery"},
-            format="json",
-        )
+        with self.assertLogs("elevate", level="INFO") as captured:
+            response = self.client.post(
+                reverse("product-stock-in", kwargs={"pk": self.product.pk}),
+                {"quantity": 7, "notes": "Supplier delivery"},
+                format="json",
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.product.refresh_from_db()
@@ -257,13 +262,19 @@ class StockMovementAPITests(AuthenticatedAPITestCase):
         self.assertEqual(movement.movement_type, "in")
         self.assertEqual(movement.quantity, 7)
         self.assertEqual(movement.notes, "Supplier delivery")
+        self.assertIn(
+            f"Stock-in completed: product_id={self.product.pk} "
+            f"sku={self.product.sku} quantity=7",
+            captured.output[0],
+        )
 
     def test_stock_out_decreases_product_stock_and_creates_movement(self):
-        response = self.client.post(
-            reverse("product-stock-out", kwargs={"pk": self.product.pk}),
-            {"quantity": 4, "notes": "Customer order"},
-            format="json",
-        )
+        with self.assertLogs("elevate", level="INFO") as captured:
+            response = self.client.post(
+                reverse("product-stock-out", kwargs={"pk": self.product.pk}),
+                {"quantity": 4, "notes": "Customer order"},
+                format="json",
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.product.refresh_from_db()
@@ -272,19 +283,30 @@ class StockMovementAPITests(AuthenticatedAPITestCase):
         self.assertEqual(movement.movement_type, "out")
         self.assertEqual(movement.quantity, 4)
         self.assertEqual(movement.notes, "Customer order")
+        self.assertIn(
+            f"Stock-out completed: product_id={self.product.pk} "
+            f"sku={self.product.sku} quantity=4",
+            captured.output[0],
+        )
 
     def test_stock_out_cannot_exceed_available_stock(self):
-        response = self.client.post(
-            reverse("product-stock-out", kwargs={"pk": self.product.pk}),
-            {"quantity": 11},
-            format="json",
-        )
+        with self.assertLogs("elevate", level="WARNING") as captured:
+            response = self.client.post(
+                reverse("product-stock-out", kwargs={"pk": self.product.pk}),
+                {"quantity": 11},
+                format="json",
+            )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["error"], "Insufficient stock. Available: 10")
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 10)
         self.assertFalse(StockMovement.objects.exists())
+        self.assertIn(
+            f"Stock-out rejected: insufficient stock product_id={self.product.pk} "
+            f"sku={self.product.sku} requested_quantity=11 available_quantity=10",
+            captured.output[0],
+        )
 
     def test_stock_movement_creation_updates_stock(self):
         response = self.client.post(
