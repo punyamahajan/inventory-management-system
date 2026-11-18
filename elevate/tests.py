@@ -1,11 +1,41 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import OperationalError
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
 from .models import Category, Product, StockMovement
+
+
+class HealthCheckAPITests(APITestCase):
+    def test_healthy_response_when_database_is_connected(self):
+        response = self.client.get(reverse("health-check"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data,
+            {"status": "healthy", "database": "connected"},
+        )
+
+    @patch("elevate.views.connection.cursor", side_effect=OperationalError)
+    def test_unhealthy_response_when_database_is_unavailable(self, _cursor):
+        response = self.client.get(reverse("health-check"))
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.data,
+            {"status": "unhealthy", "database": "unavailable"},
+        )
+
+    def test_endpoint_does_not_require_authentication(self):
+        unauthenticated_client = APIClient()
+
+        response = unauthenticated_client.get(reverse("health-check"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
 class AuthenticatedAPITestCase(APITestCase):

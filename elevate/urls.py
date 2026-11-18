@@ -8,9 +8,12 @@ from .views import (
     ProductStockInView,
     ProductStockOutView,
     LowStockProductsView,
+    HealthCheckView,
 )
 
 urlpatterns = [
+    path('health/', HealthCheckView.as_view(), name='health-check'),
+
     # Categories
     path('api/categories/', CategoryListCreateView.as_view(), name='category-list-create'),
     path('api/categories/<int:pk>/', CategoryRetrieveUpdateDestroyView.as_view(), name='category-detail'),

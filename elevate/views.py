@@ -1,10 +1,10 @@
 from rest_framework import generics, status, filters
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.types import OpenApiTypes
-from django.db import models
+from django.db import DatabaseError, connection, models
 from django_filters.rest_framework import DjangoFilterBackend
 
 
@@ -17,6 +17,26 @@ from .serializers import (
     StockMovementSerializer,
     StockUpdateSerializer
 )
+
+
+@extend_schema(tags=['Health'])
+class HealthCheckView(APIView):
+    """Report application health and database connectivity."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT 1')
+        except DatabaseError:
+            return Response(
+                {'status': 'unhealthy', 'database': 'unavailable'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({'status': 'healthy', 'database': 'connected'})
 
 
 @extend_schema(tags=['Categories'])
