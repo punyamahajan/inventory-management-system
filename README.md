@@ -119,6 +119,17 @@ GitHub Actions runs the suite with Python 3.10 and a PostgreSQL 16 service for p
 
 This repository does not currently include AWS deployment, Nginx, monitoring dashboards, or other production hosting infrastructure.
 
+## Operational verification
+
+With the application running, verify the health endpoint, API availability, and database connectivity:
+
+```bash
+python scripts/verify_system.py
+python scripts/verify_system.py --base-url https://inventory.example.com
+```
+
+The script uses only the Python standard library, prints a PASS or FAIL for each check, and returns a nonzero exit code if verification fails. `INVENTORY_API_URL` can also set the target base URL.
+
 ## Project structure
 
 ```text
@@ -137,6 +148,7 @@ inventory-management-api/
 |-- Dockerfile                          # Application image
 |-- entrypoint.sh                       # Container startup sequence
 |-- manage.py
+|-- scripts/verify_system.py            # Operational deployment verification
 `-- requirements.txt
 ```
 
